@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true">
@@ -14,7 +15,8 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="75dp"
         android:fadingEdge="horizontal"
-        android:text="@string/fileSelectorButton" />
+        android:text="@string/fileSelectorButton"
+        app:rippleColor="#4301D1" />
 
     <TextView
         android:id="@+id/selectedFileTextView"
@@ -32,7 +34,8 @@
         android:layout_below="@+id/selectedFileTextView"
         android:layout_alignParentStart="true"
         android:layout_marginTop="75dp"
-        android:text="@string/uploadButton" />
+        android:text="@string/uploadButton"
+        app:rippleColor="#4301D1"/>
 
     <TextView
         android:id="@+id/scanCompleteTextView"
