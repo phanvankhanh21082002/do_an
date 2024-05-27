@@ -2,14 +2,7 @@ package com.example.do_an;
 
 import static com.example.do_an.UploadFileToServer.uploadFile;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
-
-import android.annotation.SuppressLint;
+import android.Manifest;
 import android.app.Activity;
 import android.app.ProgressDialog;
 import android.content.ContentUris;
@@ -18,7 +11,6 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -26,16 +18,19 @@ import android.os.Handler;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.view.View;
-import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.core.app.ActivityCompat;
-import android.Manifest;
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
-import retrofit2.Retrofit;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
 
 public class MainActivity extends Activity {
 
@@ -51,27 +46,35 @@ public class MainActivity extends Activity {
     TextView scanCompleteTextView;
     Button downloadButton;
     TextView downloadedTextView;
+    Button showDatabaseButton;
+
+    DatabaseHelper databaseHelper;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        databaseHelper = new DatabaseHelper(this);
+
         ActivityCompat.requestPermissions(this,
                 new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE,
                         Manifest.permission.READ_EXTERNAL_STORAGE},
                 PackageManager.PERMISSION_GRANTED);
 
-        fileSelectorButton = (Button) findViewById(R.id.fileSelectorButton);
-        selectedFileTextView = (TextView) findViewById(R.id.selectedFileTextView);
-        uploadButton = (Button) findViewById(R.id.uploadButton);
-        scanCompleteTextView = (TextView) findViewById(R.id.scanCompleteTextView);
-        downloadButton = (Button) findViewById(R.id.downloadButton);
-        downloadedTextView = (TextView) findViewById(R.id.downloadedSizeTextView);
+        fileSelectorButton = findViewById(R.id.fileSelectorButton);
+        selectedFileTextView = findViewById(R.id.selectedFileTextView);
+        uploadButton = findViewById(R.id.uploadButton);
+        scanCompleteTextView = findViewById(R.id.scanCompleteTextView);
+        downloadButton = findViewById(R.id.downloadButton);
+        downloadedTextView = findViewById(R.id.downloadedSizeTextView);
+        showDatabaseButton = findViewById(R.id.showDatabaseButton);
 
         fileSelectorButton.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
+            @Override
+            public void onClick(View v) {
+                downloadedTextView.setVisibility(View.GONE);
+                downloadButton.setVisibility(View.GONE);
                 Intent chooseFile;
                 Intent intent;
                 chooseFile = new Intent(Intent.ACTION_GET_CONTENT);
@@ -84,31 +87,9 @@ public class MainActivity extends Activity {
         uploadButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                scanCompleteTextView.setVisibility(View.GONE);
                 if (selectedFilePath != null) {
-                    uploadScanDialog = ProgressDialog.show(MainActivity.this, "",
-                            "Upload and Scan Process Started...", true);
-                    new Thread(new Runnable() {
-                        public void run() {
-                            //new thread to start the activity
-                            int uploadResponseCode = uploadFile(selectedFilePath);
-                            uploadScanDialog.dismiss();
-                            if (uploadResponseCode == 200) {
-                                runOnUiThread(new Runnable() {
-                                    public void run() {
-                                        scanCompleteTextView
-                                                .setText("File Scan Complete!!");
-                                        downloadButton.setVisibility(View.VISIBLE);
-                                    }
-                                });
-                            } else {
-                                runOnUiThread(new Runnable() {
-                                    public void run() {
-                                        downloadButton.setVisibility(View.VISIBLE);
-                                    }
-                                });
-                            }
-                        }
-                    }).start();
+                    uploadAndScanFile();
                 } else {
                     Toast.makeText(MainActivity.this,
                                     "Please select a file to upload!!", Toast.LENGTH_LONG)
@@ -141,11 +122,15 @@ public class MainActivity extends Activity {
                                 StringBuilder stringBuilder = new StringBuilder();
                                 String line;
                                 while ((line = reader.readLine()) != null) {
-                                    stringBuilder.append(line + "\n");
+                                    stringBuilder.append(line).append("\n");
                                 }
                                 inputStream.close();
                                 reader.close();
                                 String finalResult = stringBuilder.toString();
+
+                                // Save the result to the database
+                                String fileHash = getFileHash(selectedFilePath);
+                                databaseHelper.insertScanResult(fileName, fileHash, finalResult);
 
                                 runOnUiThread(() -> {
                                     downloadedTextView.setVisibility(View.VISIBLE);
@@ -172,6 +157,41 @@ public class MainActivity extends Activity {
             }
         });
 
+        showDatabaseButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(MainActivity.this, ShowDatabaseActivity.class);
+                startActivity(intent);
+            }
+        });
+    }
+
+    private void uploadAndScanFile() {
+        uploadScanDialog = ProgressDialog.show(MainActivity.this, "",
+                "Upload and Scan Process Started...", true);
+        new Thread(new Runnable() {
+            public void run() {
+                int uploadResponseCode = uploadFile(selectedFilePath);
+                uploadScanDialog.dismiss();
+                if (uploadResponseCode == 200) {
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            scanCompleteTextView.setVisibility(View.VISIBLE);
+                            scanCompleteTextView.setText("File Scan Complete!!");
+                            downloadButton.setVisibility(View.VISIBLE);
+                        }
+                    });
+                } else {
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            scanCompleteTextView.setVisibility(View.VISIBLE);
+                            scanCompleteTextView.setText("File Scan Failed!!");
+                            downloadButton.setVisibility(View.GONE);
+                        }
+                    });
+                }
+            }
+        }).start();
     }
 
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -180,7 +200,7 @@ public class MainActivity extends Activity {
                 if (resultCode == RESULT_OK) {
                     Uri uri = data.getData();
                     System.out.println(uri.toString());
-                    selectedFilePath = getPathFromUri(this,uri);
+                    selectedFilePath = getPathFromUri(this, uri);
                     System.out.println(selectedFilePath);
                     selectedFileTextView.setText("Selected File: "
                             + selectedFilePath);
@@ -190,26 +210,25 @@ public class MainActivity extends Activity {
     }
 
     public static String getPathFromUri(Context context, Uri uri) {
-        // Kiểm tra xem URI có thể được sử dụng với DocumentProvider không
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && DocumentsContract.isDocumentUri(context, uri)) {
-            // Nếu là URI của ExternalStorageProvider, ta cần lấy ID của tài liệu
             if (isExternalStorageDocument(uri)) {
                 final String docId = DocumentsContract.getDocumentId(uri);
                 final String[] split = docId.split(":");
-                final String type = split[0];
-
-                if ("primary".equalsIgnoreCase(type)) {
-                    return context.getExternalFilesDir(null) + "/" + split[1];
+                if (split.length >= 2) {
+                    final String type = split[0];
+                    if ("primary".equalsIgnoreCase(type)) {
+                        return Environment.getExternalStorageDirectory() + "/" + split[1];
+                    }
                 }
-            }
-            // Nếu là URI của DownloadsProvider, ta cần lấy ID của tài liệu
-            else if (isDownloadsDocument(uri)) {
+            } else if (isDownloadsDocument(uri)) {
                 final String id = DocumentsContract.getDocumentId(uri);
-                final Uri contentUri = ContentUris.withAppendedId(Uri.parse("content://downloads/public_downloads"), Long.parseLong(id));
+                if (id != null && id.startsWith("raw:")) {
+                    return id.substring(4);
+                }
+                final Uri contentUri = ContentUris.withAppendedId(
+                        Uri.parse("content://downloads/public_downloads"), Long.parseLong(id));
                 return getDataColumn(context, contentUri, null, null);
-            }
-            // Nếu là URI của MediaProvider, ta cần lấy ID của tài liệu
-            else if (isMediaDocument(uri)) {
+            } else if (isMediaDocument(uri)) {
                 final String docId = DocumentsContract.getDocumentId(uri);
                 final String[] split = docId.split(":");
                 final String type = split[0];
@@ -228,18 +247,20 @@ public class MainActivity extends Activity {
 
                 return getDataColumn(context, contentUri, selection, selectionArgs);
             }
-        }
-        // Nếu không phải là DocumentProvider, ta sử dụng cách tiêu chuẩn để lấy đường dẫn
-        else if ("content".equalsIgnoreCase(uri.getScheme())) {
+        } else if ("content".equalsIgnoreCase(uri.getScheme())) {
+            if (isGooglePhotosUri(uri)) {
+                return uri.getLastPathSegment();
+            }
             return getDataColumn(context, uri, null, null);
         }
-        // Nếu là URI của FileProvider, ta lấy đường dẫn trực tiếp từ URI
         else if ("file".equalsIgnoreCase(uri.getScheme())) {
             return uri.getPath();
         }
         return null;
     }
-
+    private static boolean isGooglePhotosUri(Uri uri) {
+        return "com.google.android.apps.photos.content".equals(uri.getAuthority());
+    }
     private static boolean isExternalStorageDocument(Uri uri) {
         return "com.android.externalstorage.documents".equals(uri.getAuthority());
     }
@@ -251,6 +272,7 @@ public class MainActivity extends Activity {
     private static boolean isMediaDocument(Uri uri) {
         return "com.android.providers.media.documents".equals(uri.getAuthority());
     }
+
     private static String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) {
         Cursor cursor = null;
         String column = "_data";
@@ -269,7 +291,32 @@ public class MainActivity extends Activity {
         }
         return null;
     }
-    // reset all the controls to null
+
+    public static String getFileHash(String filePath) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            FileInputStream fis = new FileInputStream(new File(filePath));
+            byte[] byteArray = new byte[1024];
+            int bytesCount;
+
+            while ((bytesCount = fis.read(byteArray)) != -1) {
+                digest.update(byteArray, 0, bytesCount);
+            }
+
+            fis.close();
+
+            byte[] bytes = digest.digest();
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     public void reset() {
         runOnUiThread(new Runnable() {
             public void run() {
@@ -281,3 +328,6 @@ public class MainActivity extends Activity {
         });
     }
 }
+
+
+
