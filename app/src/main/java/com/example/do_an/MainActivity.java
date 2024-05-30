@@ -17,11 +17,16 @@ import android.os.Environment;
 import android.os.Handler;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.core.app.ActivityCompat;
+
+import com.github.angads25.filepicker.model.DialogConfigs;
+import com.github.angads25.filepicker.model.DialogProperties;
+import com.github.angads25.filepicker.view.FilePickerDialog;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -49,6 +54,7 @@ public class MainActivity extends Activity {
     Button showDatabaseButton;
 
     DatabaseHelper databaseHelper;
+    FilePickerDialog dialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -73,14 +79,40 @@ public class MainActivity extends Activity {
         fileSelectorButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                downloadedTextView.setVisibility(View.GONE);
-                downloadButton.setVisibility(View.GONE);
-                Intent chooseFile;
-                Intent intent;
-                chooseFile = new Intent(Intent.ACTION_GET_CONTENT);
-                chooseFile.setType("*/*");
-                intent = Intent.createChooser(chooseFile, "Choose a file");
-                startActivityForResult(intent, ACTIVITY_CHOOSE_FILE);
+                DialogProperties properties = new DialogProperties();
+                properties.selection_mode = DialogConfigs.SINGLE_MODE;
+                properties.selection_type = DialogConfigs.FILE_SELECT;
+                properties.root = Environment.getExternalStorageDirectory();
+                properties.error_dir = properties.root;
+                properties.offset = properties.root;
+                properties.extensions = new String[]{"apk"};
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                        intent.addCategory("android.intent.category.DEFAULT");
+                        intent.setData(Uri.parse(String.format("package:%s", getApplicationContext().getPackageName())));
+                        startActivityForResult(intent, 2296);
+                    } catch (Exception e) {
+                        Intent intent = new Intent();
+                        intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                        startActivityForResult(intent, 2296);
+                    }
+                }
+
+                dialog = new FilePickerDialog(MainActivity.this, properties);
+                dialog.setDialogSelectionListener(files -> {
+                    //files is the array of the paths of files selected by the Application User.
+                    if (files != null) {
+                        File selectedFile = new File(files[0]);
+                        selectedFilePath= selectedFile.toString();
+                        selectedFileTextView.setVisibility(View.VISIBLE);
+                        selectedFileTextView.setText(selectedFilePath);
+                    } else {
+                        System.out.printf("wrong choose file");
+                    }
+                });
+                dialog.show();
             }
         });
 
